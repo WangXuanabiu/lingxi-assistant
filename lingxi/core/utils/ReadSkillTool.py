@@ -121,6 +121,20 @@ class ReadSkillTool(ToolBase):
         if not skills_config:
             return None
         
+        # 如果传入的是绝对路径，尝试提取技能相对路径
+        if Path(file_path).is_absolute():
+            self.logger.debug(f"检测到绝对路径: {file_path}")
+            # 尝试从绝对路径中提取技能相对路径
+            relative_path = self._extract_skill_relative_path(skill_name, file_path)
+            if relative_path:
+                self.logger.debug(f"从绝对路径提取技能相对路径: {file_path} -> {relative_path}")
+                file_path = relative_path
+            else:
+                # 如果无法提取，尝试直接查找文件
+                if Path(file_path).exists():
+                    return file_path
+                return None
+        
         # 在内置技能目录和用户技能目录中查找
         for skills_path in [skills_config.builtin_skills_dir, skills_config.user_skills_dir]:
             if not skills_path:
@@ -132,6 +146,62 @@ class ReadSkillTool(ToolBase):
                     return str(skill_file_path)
             except Exception:
                 continue
+        
+        return None
+    
+    def _extract_skill_relative_path(self, skill_name: str, absolute_path: str) -> Optional[str]:
+        """从绝对路径中提取技能的相对路径
+        
+        Args:
+            skill_name: 技能名称
+            absolute_path: 绝对路径
+            
+        Returns:
+            技能相对路径，如果无法提取返回 None
+        """
+        skills_config = self.skill_system.loader
+        if not skills_config:
+            return None
+        
+        # 尝试在所有技能目录中查找匹配的技能路径
+        for skills_path in [skills_config.builtin_skills_dir, skills_config.user_skills_dir]:
+            if not skills_path:
+                continue
+            try:
+                # 将技能目录路径转换为 Path 对象进行比较
+                skills_dir_path = Path(skills_path).resolve()
+                absolute_path_obj = Path(absolute_path).resolve()
+
+                # 检查绝对路径是否在该技能目录下
+                if skills_dir_path in absolute_path_obj.parents or skills_dir_path == absolute_path_obj.parent:
+                    # 计算相对路径
+                    skill_dir = skills_dir_path / skill_name
+                    try:
+                        relative_path = absolute_path_obj.relative_to(skill_dir)
+                        # 统一使用正斜杠
+                        return str(relative_path).replace('\\', '/')
+                    except ValueError:
+                        continue
+            except Exception:
+                continue
+        
+        # 尝试通用的路径提取：查找技能名称在路径中的位置
+        try:
+            abs_path_str = str(Path(absolute_path)).replace('\\', '/')
+            skill_name_lower = skill_name.lower()
+
+            # 查找路径中是否包含技能名称
+            skill_name_pos = abs_path_str.lower().rfind(skill_name_lower)
+            if skill_name_pos != -1:
+                # 技能名称后的路径部分
+                after_skill = abs_path_str[skill_name_pos + len(skill_name):]
+                if after_skill.startswith('/'):
+                    return after_skill[1:]
+                elif after_skill == '' or after_skill.startswith('.'):
+                    # 如果是技能名称本身或子路径
+                    pass
+        except Exception:
+            pass
         
         return None
     
